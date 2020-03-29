@@ -106,6 +106,7 @@ def vmc(
     verbose=False,
     stepoffset=0,
     hdf_file=None,
+    guiding_wf=None,
 ):
     """Run a Monte Carlo sample of a given wave function.
 
@@ -124,6 +125,8 @@ def vmc(
       verbose: Print out step information 
 
       stepoffset: If continuing a run, what to start the step numbering at.
+      
+      guiding_wf: A guiding wave function sample
 
     Returns: (df,configs)
        df: A list of dictionaries nstep long that contains all results from the accumulators. These are averaged across all walkers.
@@ -131,6 +134,10 @@ def vmc(
        configs: The final coordinates from this calculation.
        
     """
+    #Guiding wf 
+    if guiding_wf is None:
+        guiding_wf = wf
+
     if accumulators is None:
         accumulators = {}
         if verbose:
@@ -147,6 +154,7 @@ def vmc(
     nconf, nelec, ndim = configs.configs.shape
     df = []
     wf.recompute(configs)
+    guiding_wf.recompute(configs)
     for step in range(nsteps):
         if verbose:
             print("step", step)
@@ -165,11 +173,12 @@ def vmc(
 
             # Acceptance
             t_prob = np.exp(1 / (2 * tstep) * (forward - backward))
-            ratio = np.multiply(wf.testvalue(e, newcoorde) ** 2, t_prob)
+            ratio = np.multiply(guiding_wf.testvalue(e, newcoorde) ** 2, t_prob)
             accept = ratio > np.random.rand(nconf)
 
-            # Update wave function
+            # Update wave function(s)
             configs.move(e, newcoorde, accept)
+            guiding_wf.updateinternals(e, newcoorde, mask=accept)
             wf.updateinternals(e, newcoorde, mask=accept)
             acc.append(np.mean(accept))
         avg = {}
