@@ -161,13 +161,13 @@ def vmc(
         acc = []
         for e in range(nelec):
             # Propose move
-            grad = limdrift(np.real(guiding_wf.gradient(e, configs.electron(e)).T))
+            grad = limdrift(np.real(wf.gradient(e, configs.electron(e)).T))
             gauss = np.random.normal(scale=np.sqrt(tstep), size=(nconf, 3))
             newcoorde = configs.configs[:, e, :] + gauss + grad * tstep
             newcoorde = configs.make_irreducible(e, newcoorde)
 
             # Compute reverse move
-            new_grad = limdrift(np.real(guiding_wf.gradient(e, newcoorde).T))
+            new_grad = limdrift(np.real(wf.gradient(e, newcoorde).T))
             forward = np.sum(gauss ** 2, axis=1)
             backward = np.sum((gauss + tstep * (grad + new_grad)) ** 2, axis=1)
 
@@ -179,6 +179,7 @@ def vmc(
             # Update wave function(s)
             configs.move(e, newcoorde, accept)
             guiding_wf.updateinternals(e, newcoorde, mask=accept)
+            wf.updateinternals(e, newcoorde, mask=accept)
             acc.append(np.mean(accept))
         avg = {}
         for k, accumulator in accumulators.items():
