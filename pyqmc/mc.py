@@ -137,6 +137,7 @@ def vmc(
     #Guiding wf 
     if guiding_wf is None:
         guiding_wf = wf
+        print("Guiding wf is just WF")
 
     if accumulators is None:
         accumulators = {}
@@ -183,7 +184,8 @@ def vmc(
             acc.append(np.mean(accept))
         avg = {}
         for k, accumulator in accumulators.items():
-            dat = accumulator.avg(configs, wf)
+            #dat = accumulator.avg(configs, wf)
+            dat = accumulator.avg(configs, wf, guiding_wf)
             for m, res in dat.items():
                 # print(m,res.nbytes/1024/1024)
                 avg[k + m] = res  # np.mean(res,axis=0)

@@ -91,7 +91,7 @@ def distvmc(
         coords.join(coord)
         alldata.extend(collected_data)
         for d in collected_data:
-            pyqmc.mc.vmc_file(hdf_file, d, kwargs, coords)
+            pyqmc.mc.vmc_file(hdf_file, d, {}, coords)
 
     return alldata, coords
 
