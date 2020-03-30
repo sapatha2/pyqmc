@@ -246,7 +246,7 @@ def line_minimization(
     return wf, df
 
 
-def lm_sampler(wf, configs, params, pgrad_acc):
+def lm_sampler(wf, configs, params, pgrad_acc, guiding_wf = None):
     """ 
     Evaluates accumulator on the same set of configs for correlated sampling of different wave function parameters
 
@@ -265,14 +265,17 @@ def lm_sampler(wf, configs, params, pgrad_acc):
     import copy
     import numpy as np
 
+    if guiding_wf is None:
+        guiding_wf = wf
+
     data = []
-    psi0 = wf.recompute(configs)[1]  # recompute gives logdet
+    psig0 = guiding_wf.recompute(configs)[1]  # recompute gives logdet
     for p in params:
         newparms = pgrad_acc.transform.deserialize(p)
         for k in newparms:
             wf.parameters[k] = newparms[k]
-        psi = wf.recompute(configs)[1]  # recompute gives logdet
-        rawweights = np.exp(2 * (psi - psi0))  # convert from log(|psi|) to |psi|**2
+        psi =  wf.recompute(configs)[1]
+        rawweights = np.exp(2 * (psi - psig0))  # convert from log(|psi|) to |psi|**2
         df = pgrad_acc.enacc(configs, wf)
         df["weight"] = rawweights
 
