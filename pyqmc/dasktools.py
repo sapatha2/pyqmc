@@ -97,7 +97,7 @@ def distvmc(
 
 
 def dist_lm_sampler(
-    wf, configs, params, pgrad_acc, npartitions=None, client=None, lm_sampler=None
+    wf, configs, params, pgrad_acc, npartitions=None, client=None, lm_sampler=None, guiding_wf = None,
 ):
     """
     Evaluates accumulator on the same set of configs for correlated sampling of different wave function parameters.  Parallelized with parsl.
@@ -126,7 +126,7 @@ def dist_lm_sampler(
     configspart = configs.split(npartitions)
     allruns = []
     for p in range(npartitions):
-        allruns.append(client.submit(lm_sampler, wf, configspart[p], params, pgrad_acc))
+        allruns.append(client.submit(lm_sampler, wf, configspart[p], params, pgrad_acc, guiding_wf))
 
     stepresults = []
     for r in allruns:
