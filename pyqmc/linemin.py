@@ -183,7 +183,8 @@ def line_minimization(
         dpdp = np.mean(df["pgraddpidpj"], axis=0)
         grad = 2 * np.real(dpH - en * dp)
         Sij = np.real(dpdp - np.einsum("i,j->ij", dp, dp))
-        return coords, df["pgradtotal"].values[-1], grad, Sij, en, en_err
+        weights = np.mean(df["pgradweights"])
+        return coords, df["pgradtotal"].values[-1], grad, Sij, en, en_err, weights
 
     x0 = pgrad_acc.transform.serialize_parameters(wf.parameters)
 
@@ -195,14 +196,15 @@ def line_minimization(
     # Gradient descent cycles
     for it in range(maxiters):
         # Calculate gradient accurately
-        coords, last_en, pgrad, Sij, en, en_err = gradient_energy_function(x0, coords)
+        coords, last_en, pgrad, Sij, en, en_err, weights = gradient_energy_function(x0, coords)
         step_data = {}
         step_data["energy"] = en
         step_data["energy_error"] = en_err
         step_data["x"] = x0
         step_data["pgradient"] = pgrad
         step_data["iteration"] = it
-
+        step_data["weights"] = weights
+    
         if verbose:
             print("descent en", en, en_err)
             print("descent |grad|", np.linalg.norm(pgrad), flush=True)
