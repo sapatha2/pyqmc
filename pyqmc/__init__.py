@@ -1,6 +1,7 @@
 name = "pyqmc"
 from pyqmc.mc import vmc, initial_guess
 from pyqmc.slateruhf import PySCFSlaterUHF
+from pyqmc.slaterpbc import PySCFSlaterPBC
 from pyqmc.multislater import MultiSlater
 
 from pyqmc.multiplywf import MultiplyWF
@@ -63,6 +64,7 @@ def default_slater(mol, mf, optimize_orbitals=False):
         freeze = {}
     return wf, to_opt, freeze
 
+
 def default_multislater(mol, mf, mc, tol=None):
     import numpy as np
 
@@ -122,7 +124,7 @@ def default_jastrow(mol, ion_cusp=False, rcut=7.5):
 
 def default_msj(mol, mf, mc, tol=None, rcut=7.5):
     wf1, to_opt1, freeze1 = default_multislater(mol, mf, mc, tol)
-    wf2, to_opt2, freeze2 = default_jastrow(mol, rcut=rcut)
+    wf2, to_opt2, freeze2 = default_jastrow(mol, rcut = rcut)
     wf = MultiplyWF(wf1, wf2)
     to_opt = ["wf1" + x for x in to_opt1] + ["wf2" + x for x in to_opt2]
     freeze = {}

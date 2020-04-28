@@ -21,7 +21,8 @@ class EnergyAccumulator:
                 return {
                     "ke": ke,
                     "ee": ee,
-                    "ei": ei + ecp_val,
+                    "ei": ei,
+                    "ecp": ecp_val,
                     "total": ke + ee + ei + ecp_val + ii,
                 }
 
@@ -152,8 +153,15 @@ class PGradTransform:
 
         return d
 
-    def avg(self, configs, wf):
+    def avg(self, configs, wf, weights=None):
+        '''
+        Compute (weighted) average
+        '''
+
         nconf = configs.configs.shape[0]
+        if weights is None: 
+            weights = np.ones(nconf)
+
         pgrad = wf.pgradient()
         den = self.enacc(configs, wf)
         energy = den["total"]
@@ -164,9 +172,48 @@ class PGradTransform:
 
         d = {}
         for k, it in den.items():
-            d[k] = np.mean(it, axis=0)
-        d["dpH"] = np.einsum("i,ij->j", energy, dp_regularized) / nconf
-        d["dppsi"] = np.mean(dp_regularized, axis=0)
-        d["dpidpj"] = np.einsum("ij,ik->jk", dp, dp_regularized) / nconf
+            d[k] = np.average(it, weights = weights, axis=0)
+        d["dpH"] = np.einsum("i,ij->j", energy, weights[:, np.newaxis] * dp_regularized) / np.sum(weights)
+        d["dppsi"] = np.average(dp_regularized, weights = weights, axis=0)
+        d["dpidpj"] = np.einsum("ij,ik->jk", dp, weights[:, np.newaxis] * dp_regularized) / np.sum(weights)
 
+        return d
+
+
+class SqAccumulator:
+    r"""
+    Accumulates structure factor 
+
+    .. math:: S(\vec{q}) = \langle \rho_{\vec{q}} \rho_{-\vec{q}} \rangle
+                         = \langle \left| \sum_{j=1}^{N_e} e^{i\vec{q}\cdot\vec{r}_j} \right| \rangle
+
+    """
+
+    def __init__(self, qlist=None, Lvecs=None, nq=4):
+        """
+        Inputs:
+            qlist: (n, 3) array-like. If qlist is provided, Lvecs and nq are ignored
+            Lvecs: (3, 3) array-like of lattice vectors. Required if qlist is None
+            nq: int, if qlist is nonzero, use a uniform grid of shape (nq, nq, nq)
+        """
+        if qlist is not None:
+            self.qlist = qlist
+        else:
+            assert (
+                Lvecs is not None
+            ), "need to provide either list of q vectors or lattice vectors"
+            Gvecs = np.linalg.inv(Lvecs).T * 2 * np.pi
+            qvecs = list(map(np.ravel, np.meshgrid(*[np.arange(nq)] * 3)))
+            qvecs = np.stack(qvecs, axis=1)
+            self.qlist = np.dot(qvecs, Gvecs)
+
+    def __call__(self, configs, wf):
+        nelec = configs.configs.shape[1]
+        exp_iqr = np.exp(1j * np.inner(configs.configs, self.qlist))
+        sum_exp_iqr = exp_iqr.sum(axis=1)
+        d = {"Sq": (sum_exp_iqr.real ** 2 + sum_exp_iqr.imag ** 2) / nelec}
+        return d
+
+    def avg(self, configs, wf):
+        d = {k: np.mean(it, axis=0) for k, it in self(configs, wf).items()}
         return d

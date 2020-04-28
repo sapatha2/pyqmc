@@ -18,7 +18,9 @@ def distvmc(
     wf,
     coords,
     accumulators=None,
-    nsteps=100,
+    nblocks=100,
+    nsteps_per_block=1,
+    nsteps=None,
     hdf_file=None,
     npartitions=None,
     nsteps_per=None,
@@ -32,12 +34,20 @@ def distvmc(
 
     coords: nconf x nelec x 3 
 
-    nsteps: how many steps to move each walker
+    nblocks: number of VMC blocks
 
+    nsteps_per_block: number of steps per block
+
+    nsteps: (Deprecated) how many steps to move each walker, maps to nblocks = 100, nsteps_per_blocks = 1 
 
     """
+
+    if nsteps is not None:
+        nblocks = nsteps
+        nsteps_per_block = 1
+
     if nsteps_per is None:
-        nsteps_per = nsteps
+        nsteps_per = nblocks
 
     if hdf_file is not None:
         with h5py.File(hdf_file, "a") as hdf:
@@ -51,7 +61,7 @@ def distvmc(
     if npartitions is None:
         npartitions = sum([x for x in client.nthreads().values()])
     allruns = []
-    niterations = int(nsteps / nsteps_per)
+    niterations = int(nblocks / nsteps_per)
     coord = coords.split(npartitions)
     alldata = []
     for epoch in range(niterations):
@@ -65,7 +75,8 @@ def distvmc(
             wfs,
             thiscoord,
             **{
-                "nsteps": nsteps_per,
+                "nblocks": nsteps_per,
+                "nsteps_per_block": nsteps_per_block,
                 "accumulators": accumulators,
                 "stepoffset": epoch * nsteps_per,
             },
@@ -174,6 +185,7 @@ def cvmc_optimize(*args, client, **kwargs):
 
 def distdmc_propagate(wf, configs, weights, *args, client, npartitions=None, **kwargs):
     import pyqmc.dmc
+
     if npartitions is None:
         npartitions = sum([x for x in client.nthreads().values()])
 
@@ -233,32 +245,35 @@ def dist_sample_overlap(wfs, configs, *args, client, npartitions=None, **kwargs)
     # was done with a different average weight.
     keys = allresults[0][0].keys()
     df = {}
+
     for k in keys:
-        df[k] = np.array([x[0][k] for x in allresults])
-    for k in df.keys():
+        df[k] = np.zeros(allresults[0][0][k].shape)
+    
+    for k in keys:
         if k != "weight" and k != "overlap" and k != "overlap_gradient":
-            if len(df[k].shape) == 2:
-                df[k] = np.sum(df[k] * df["weight"][:, :, -1], axis=0) / np.sum(
-                    df["weight"][:, :, -1], axis=0
-                )
-            elif len(df[k].shape) == 3:
-                df[k] = np.sum(
-                    df[k] * df["weight"][:, :, -1, np.newaxis], axis=0
-                ) / np.sum(df["weight"][:, :, -1, np.newaxis], axis=0)
-            elif len(df[k].shape) == 4:
-                df[k] = np.sum(
-                    df[k] * df["weight"][:, :, -1, np.newaxis, np.newaxis], axis=0
-                ) / np.sum(df["weight"][:, :, -1, np.newaxis, np.newaxis], axis=0)
-
-            else:
-                raise NotImplementedError(
-                    "too many/two few dimension in dist_sample_overlap"
-                )
+            for x in allresults:
+                if len(df[k].shape) == 1:
+                    df[k] += (
+                        x[0][k] * x[0]["weight"][:, -1]
+                    ) / np.sum([x[0]["weight"][:, -1] for x in allresults], axis=0) 
+                elif len(df[k].shape) == 2:
+                    df[k] += (
+                        x[0][k] * x[0]["weight"][:, -1, np.newaxis]
+                    ) / np.sum([x[0]["weight"][:, -1, np.newaxis] for x in allresults], axis=0) 
+                elif len(df[k].shape) == 3:
+                    df[k] += (
+                        x[0][k] * x[0]["weight"][:, -1, np.newaxis, np.newaxis]
+                    ) / np.sum([x[0]["weight"][:, -1, np.newaxis, np.newaxis] for x in allresults], axis=0) 
+                else:
+                    raise NotImplementedError(
+                        "too many/too few dimension in dist_sample_overlap"
+                    )
+   
         elif k != "weight":
-            df[k] = np.mean(df[k], axis=0)
-
-    df["weight"] = np.mean(df["weight"], axis=0)
-
+            for x in allresults:
+                df[k] += x[0][k] / len(allresults)
+    
+    df["weight"] = np.mean([x[0]["weight"] for x in allresults], axis=0)
     return df, coordret
 
 

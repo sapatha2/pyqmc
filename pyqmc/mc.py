@@ -100,7 +100,9 @@ def vmc_file(hdf_file, data, attr, configs):
 def vmc(
     wf,
     configs,
-    nsteps=100,
+    nblocks=100,
+    nsteps_per_block=1,
+    nsteps=None,
     tstep=0.5,
     accumulators=None,
     verbose=False,
@@ -116,7 +118,11 @@ def vmc(
       
       configs: Initial electron coordinates
 
-      nsteps: Number of VMC steps to propagate
+      nblocks: Number of VMC blocks to run 
+
+      nsteps_per_block: Number of steps to run per block
+
+      nsteps: (Deprecated) Number of steps to run, maps to nblocks = 1, nsteps_per_block = nsteps
 
       tstep: Time step for move proposals. Only affects efficiency.
 
@@ -125,8 +131,13 @@ def vmc(
       verbose: Print out step information 
 
       stepoffset: If continuing a run, what to start the step numbering at.
+<<<<<<< HEAD
       
       guiding_wf: A guiding wave function sample
+=======
+  
+      hdf_file: Hdf_file to store vmc output.
+>>>>>>> master
 
     Returns: (df,configs)
        df: A list of dictionaries nstep long that contains all results from the accumulators. These are averaged across all walkers.
@@ -138,6 +149,10 @@ def vmc(
     if guiding_wf is None:
         guiding_wf = wf
         print("Guiding wf is just WF")
+    
+    if nsteps is not None:
+        nblocks = nsteps
+        nsteps_per_block = 1
 
     if accumulators is None:
         accumulators = {}
@@ -148,50 +163,57 @@ def vmc(
     if hdf_file is not None:
         with h5py.File(hdf_file, "a") as hdf:
             if "configs" in hdf.keys():
+                stepoffset = hdf["step"][-1] + 1
                 configs.load_hdf(hdf)
                 if verbose:
-                    print("Restarted calculation")
+                    print("Restarting calculation from step ", stepoffset)
 
     nconf, nelec, ndim = configs.configs.shape
     df = []
     wf.recompute(configs)
     guiding_wf.recompute(configs)
-    for step in range(nsteps):
-        if verbose:
-            print("step", step)
+    for block in range(nblocks):
+        block_avg = {}
         acc = []
-        for e in range(nelec):
-            # Propose move
-            grad = limdrift(np.real(wf.gradient(e, configs.electron(e)).T))
-            gauss = np.random.normal(scale=np.sqrt(tstep), size=(nconf, 3))
-            newcoorde = configs.configs[:, e, :] + gauss + grad * tstep
-            newcoorde = configs.make_irreducible(e, newcoorde)
+        for step in range(nsteps_per_block):
+            if verbose:
+                print(f"block {block}, step {step}")
+            for e in range(nelec):
+                # Propose move
+                grad = limdrift(np.real(wf.gradient(e, configs.electron(e)).T))
+                gauss = np.random.normal(scale=np.sqrt(tstep), size=(nconf, 3))
+                newcoorde = configs.configs[:, e, :] + gauss + grad * tstep
+                newcoorde = configs.make_irreducible(e, newcoorde)
 
-            # Compute reverse move
-            new_grad = limdrift(np.real(wf.gradient(e, newcoorde).T))
-            forward = np.sum(gauss ** 2, axis=1)
-            backward = np.sum((gauss + tstep * (grad + new_grad)) ** 2, axis=1)
+                # Compute reverse move
+                new_grad = limdrift(np.real(wf.gradient(e, newcoorde).T))
+                forward = np.sum(gauss ** 2, axis=1)
+                backward = np.sum((gauss + tstep * (grad + new_grad)) ** 2, axis=1)
 
-            # Acceptance
-            t_prob = np.exp(1 / (2 * tstep) * (forward - backward))
-            ratio = np.multiply(guiding_wf.testvalue(e, newcoorde) ** 2, t_prob)
-            accept = ratio > np.random.rand(nconf)
+                # Acceptance
+                t_prob = np.exp(1 / (2 * tstep) * (forward - backward))
+                ratio = np.multiply(guiding_wf.testvalue(e, newcoorde) ** 2, t_prob)
+                accept = ratio > np.random.rand(nconf)
 
-            # Update wave function(s)
-            configs.move(e, newcoorde, accept)
-            guiding_wf.updateinternals(e, newcoorde, mask=accept)
-            wf.updateinternals(e, newcoorde, mask=accept)
-            acc.append(np.mean(accept))
-        avg = {}
-        for k, accumulator in accumulators.items():
-            #dat = accumulator.avg(configs, wf)
-            dat = accumulator.avg(configs, wf, guiding_wf)
-            for m, res in dat.items():
-                # print(m,res.nbytes/1024/1024)
-                avg[k + m] = res  # np.mean(res,axis=0)
-        avg["acceptance"] = np.mean(acc)
-        avg["step"] = stepoffset + step
-        avg["nconfig"] = nconf
-        vmc_file(hdf_file, avg, dict(tstep=tstep), configs)
-        df.append(avg)
+                # Update wave function
+                configs.move(e, newcoorde, accept)
+                guiding_wf.updateinternals(e, newcoorde, mask=accept)
+                wf.updateinternals(e, newcoorde, mask=accept)
+                acc.append(np.mean(accept))
+
+            # Rolling average on step
+            for k, accumulator in accumulators.items():
+                dat = accumulator.avg(configs, wf, guiding_wf)
+                for m, res in dat.items():
+                    if k + m not in block_avg:
+                        block_avg[k + m] = res / nsteps_per_block
+                    else:
+                        block_avg[k + m] += res / nsteps_per_block
+
+        # Append blocks
+        block_avg["acceptance"] = np.mean(acc)
+        block_avg["step"] = stepoffset + block
+        block_avg["nconfig"] = nconf * nsteps_per_block
+        vmc_file(hdf_file, block_avg, dict(tstep=tstep), configs)
+        df.append(block_avg)
     return df, configs
