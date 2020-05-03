@@ -110,7 +110,7 @@ class LinearTransform:
 class PGradTransform:
     """   """
 
-    def __init__(self, enacc, transform, nodal_cutoff=1e-3):
+    def __init__(self, enacc, transform, nodal_cutoff=1e-2):
         self.enacc = enacc
         self.transform = transform
         self.nodal_cutoff = nodal_cutoff
